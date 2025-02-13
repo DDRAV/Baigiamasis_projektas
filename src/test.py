@@ -35,6 +35,12 @@ def clean_lyrics(lyrics):
     if re.search(r"(.)\1{2,}", lyrics):
         return ""
 
+    # Remove lyrics with only repeated words (e.g., "la la la la la")
+    words = lyrics.split()
+    unique_words = set(words)
+    if len(unique_words) == 1:  # All words are the same
+        return ""
+
     # Remove unwanted words
     if any(word in lyrics.lower() for word in ["unknown", "nonsense", "na", "na-na"]):
         return ""
@@ -43,8 +49,8 @@ def clean_lyrics(lyrics):
 
 def is_duplicate(title, lyrics, chords):
     """Checks if the song entry already exists in the database."""
-    query = "SELECT COUNT(*) FROM test WHERE title = %s AND lyrics = %s AND chords = %s;"
-    result = db.execute_sql(query, (title, lyrics, chords))
+    query = "SELECT COUNT(*) FROM test WHERE title = %s AND lyrics = %s AND chord_1 = %s;"
+    result = db.execute_sql(query, (title, lyrics, chords[0] if chords else "0"))
     return result and result[0][0] > 0  # If count > 0, it means entry exists
 
 def scrape_page(page):
@@ -118,20 +124,34 @@ def process_song(song_url):
             continue
 
         # Extract chords
-        line_chords = ">".join([chord.get_text(strip=True) for chord in chords]) if chords else ""
+        chord_list = [chord.get_text(strip=True) for chord in chords]
+
+        # **NEW FILTER: Skip if chords are at least 2x more than lyrics**
+        if len(chord_list) >= 2 * len(line_lyrics.split()):
+            print(f"⚠️ Skipping line with too many chords: '{line_lyrics}'")
+            continue
+
+        # **NEW FILTER: Skip if there are more than 6 chords**
+        if len(chord_list) > 6:
+            print(f"⚠️ Skipping line with more than 6 chords: '{chord_list}'")
+            continue
+
+        # Pad chords to ensure we have exactly 6 columns
+        chord_list += ["0"] * (6 - len(chord_list))
 
         # Check if this entry already exists
-        if is_duplicate(title, line_lyrics, line_chords):
+        if is_duplicate(title, line_lyrics, chord_list):
             print(f"⚠️ Duplicate entry found, skipping: {title} - {artist}")
             continue
 
         # Store in DB if valid
-        if line_lyrics and line_chords:
+        if line_lyrics:
             try:
-                db.execute_sql(
-                    "INSERT INTO test (title, artist, lyrics, chords) VALUES (%s, %s, %s, %s);",
-                    (title, artist, line_lyrics, line_chords)
-                )
+                query = """
+                    INSERT INTO test (title, artist, lyrics, chord_1, chord_2, chord_3, chord_4, chord_5, chord_6)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
+                """
+                db.execute_sql(query, (title, artist, line_lyrics, *chord_list))
                 line_count += 1
             except Exception as e:
                 print(f"⚠️ Error inserting data for {song_url}: {e}")

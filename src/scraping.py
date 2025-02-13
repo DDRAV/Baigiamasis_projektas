@@ -22,13 +22,23 @@ chrome_options.add_argument("--no-sandbox")
 driver = webdriver.Chrome(options=chrome_options)
 
 def clean_lyrics(lyrics):
-    """Cleans the lyrics by removing unwanted characters and sequences."""
-    lyrics = re.sub(r"[^\w\s,.]", "", lyrics)  # Remove special characters
+    """Cleans the lyrics by removing unwanted characters, fixing spacing, and filtering numbers."""
+    lyrics = re.sub(r"[^\w\s,.]", "", lyrics)  # Remove special characters except spaces, commas, and periods
+    lyrics = re.sub(r"\s+", " ", lyrics).strip()  # Normalize spacing
     lyrics = lyrics.replace('_', '')  # Remove underscores
-    if re.search(r"(.)\1{2,}", lyrics):  # Remove repeated letters (e.g., "aaa")
+
+    # Remove lines that contain numbers
+    if re.search(r"\d", lyrics):
         return ""
+
+    # Remove repeated letters (e.g., "aaa")
+    if re.search(r"(.)\1{2,}", lyrics):
+        return ""
+
+    # Remove unwanted words
     if any(word in lyrics.lower() for word in ["unknown", "nonsense", "na", "na-na"]):
         return ""
+
     return lyrics
 
 def is_duplicate(title, lyrics, chords):
