@@ -10,27 +10,9 @@ import time
 # Initialize the database connection
 db = DBEngine()
 
-# URL of the main page with songs list
-url = "https://www.songsterr.com"
-
-# Headers to mimic a real browser
-headers = {"User-Agent": "Mozilla/5.0"}
-
-# Function to clean lyrics (remove unwanted punctuation and sequences)
-def clean_lyrics(lyrics):
-    # Remove all punctuation except for dot (.) and comma (,) and underscores (_)
-    lyrics = re.sub(r"[^\w\s,.]", "", lyrics)  # Remove everything except word characters, spaces, commas, and periods
-
-    # Remove underscores (_)
-    lyrics = lyrics.replace('_', '')
-
-    # Check if the lyrics contain any sequence of the same letters or unknown words
-    if re.search(r"(.)\1{2,}", lyrics):  # Repeated characters (e.g. "aaa")
-        return ""
-    if any(word in lyrics.lower() for word in ["unknown", "nonsense", "na", "na-na"]):  # Example of unknown words
-        return ""
-
-    return lyrics
+# Base URL for pagination
+BASE_URL = "https://www.songsterr.com/tags/guitar?page={}"
+HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 # Selenium setup for browser automation
 chrome_options = Options()
@@ -39,92 +21,129 @@ chrome_options.add_argument("--disable-gpu")
 chrome_options.add_argument("--no-sandbox")
 driver = webdriver.Chrome(options=chrome_options)
 
-# Open the main URL using Selenium
-driver.get(url)
-time.sleep(2)  # Wait for the page to load
+def clean_lyrics(lyrics):
+    """Cleans the lyrics by removing unwanted characters, fixing spacing, and filtering numbers."""
+    lyrics = re.sub(r"[^\w\s,.]", "", lyrics)  # Remove special characters except spaces, commas, and periods
+    lyrics = re.sub(r"\s+", " ", lyrics).strip()  # Normalize spacing
+    lyrics = lyrics.replace('_', '')  # Remove underscores
 
-# Infinite scroll (or you can find all the song links after scrolling)
-while True:
-    # Find all song links
-    song_links = driver.find_elements(By.CLASS_NAME, "B0cew")  # Adjust class name if needed
-    if len(song_links) == 0:
-        break  # Stop if no more songs are found
+    # Remove lines that contain numbers
+    if re.search(r"\d", lyrics):
+        return ""
 
-    # Get all song URLs
-    for link in song_links:
-        song_url = link.get_attribute("href")
-        # Replace '-tab-' with '-chords-' in the URL to get the correct page
-        song_url = song_url.replace("-tab-", "-chords-")
-        print(f"Found song URL: {song_url}")
+    # Remove repeated letters (e.g., "aaa")
+    if re.search(r"(.)\1{2,}", lyrics):
+        return ""
 
-        # Fetch the song's page content using requests
-        song_response = requests.get(song_url, headers=headers)
-        if song_response.status_code != 200:
-            print(f"Error fetching the song page: {song_url}")
+    # Remove unwanted words
+    if any(word in lyrics.lower() for word in ["unknown", "nonsense", "na", "na-na"]):
+        return ""
+
+    return lyrics
+
+def is_duplicate(title, lyrics, chords):
+    """Checks if the song entry already exists in the database."""
+    query = "SELECT COUNT(*) FROM test WHERE title = %s AND lyrics = %s AND chords = %s;"
+    result = db.execute_sql(query, (title, lyrics, chords))
+    return result and result[0][0] > 0  # If count > 0, it means entry exists
+
+def scrape_page(page):
+    """Scrapes a single page for song URLs and processes them."""
+    url = BASE_URL.format(page)
+    print(f"🔄 Scraping page {page}: {url}")
+
+    # Fetch the page
+    driver.get(url)
+    time.sleep(2)  # Wait for page load
+
+    # Find all song links inside the class Bw9243
+    song_links = driver.find_elements(By.CSS_SELECTOR, ".Bw9243 a")
+
+    # Extract URLs and filter only those with "-chords-"
+    chord_links = [link.get_attribute("href")
+        for link in song_links if "-chords-" in link.get_attribute("href")
+    ]
+
+    if not chord_links:
+        print("✅ No more chord links found. Stopping.")
+        return False  # Stop when no new links are found
+
+    print(f"✅ Found {len(chord_links)} chord links on page {page}")
+
+    # Process each song URL
+    for song_url in chord_links:
+        process_song(song_url)
+
+    return True  # Continue to the next page
+
+def process_song(song_url):
+    """Scrapes lyrics, chords, title, and artist from a song page and saves them to the database."""
+    print(f"🎸 Scraping song: {song_url}")
+
+    # Fetch the song page content
+    response = requests.get(song_url, headers=HEADERS)
+    if response.status_code != 200:
+        print(f"❌ Error fetching song page: {song_url}")
+        return
+
+    soup = BeautifulSoup(response.text, "html.parser")
+
+    # Extract title & artist
+    title_tag = soup.select_one("span.C612ph")
+    artist_tag = soup.select_one("a.C61rs")
+
+    title = title_tag.get_text(strip=True) if title_tag else "Unknown"
+    artist = artist_tag.get_text(strip=True) if artist_tag else "Unknown"
+
+    print(f"🎵 Title: {title} | 🎤 Artist: {artist}")
+
+    lines = soup.find_all("p", class_="C5zdi")  # Extract lyrics & chords
+
+    line_count = 0
+    for line in lines:
+        words = line.find_all("span", class_="C5zy8")  # Lyrics
+        chords = line.find_all("span", class_="Bsiek")  # Chords
+
+        if not words:
             continue
 
-        # Parse the song page HTML
-        song_soup = BeautifulSoup(song_response.text, "html.parser")
+        # Extract lyrics
+        line_lyrics = "".join([word.get_text() for word in words]).strip()
+        line_lyrics = " ".join(line_lyrics.split())
+        if len(line_lyrics.split()) < 2:
+            continue  # Ignore very short lines
 
-        # Find all elements containing both chords and lyrics
-        lines = song_soup.find_all("p", class_="C5zdi")
+        line_lyrics = clean_lyrics(line_lyrics)
+        if not line_lyrics:
+            continue
 
-        # Initialize line counter for each song
-        line_count = 0
+        # Extract chords
+        line_chords = ">".join([chord.get_text(strip=True) for chord in chords]) if chords else ""
 
-        # Loop through each line and extract lyrics + chords
-        for line in lines:
-            words = line.find_all("span", class_="C5zy8")  # Lyrics
-            chords = line.find_all("span", class_="Bsiek")  # Chords
+        # Check if this entry already exists
+        if is_duplicate(title, line_lyrics, line_chords):
+            print(f"⚠️ Duplicate entry found, skipping: {title} - {artist}")
+            continue
 
-            # If no lyrics found, skip this line
-            if not words:
-                continue
+        # Store in DB if valid
+        if line_lyrics and line_chords:
+            try:
+                db.execute_sql(
+                    "INSERT INTO test (title, artist, lyrics, chords) VALUES (%s, %s, %s, %s);",
+                    (title, artist, line_lyrics, line_chords)
+                )
+                line_count += 1
+            except Exception as e:
+                print(f"⚠️ Error inserting data for {song_url}: {e}")
 
-            # Extract lyrics with proper spacing
-            line_lyrics = "".join([word.get_text() for word in words]).strip()
-            line_lyrics = " ".join(line_lyrics.split())
+    if line_count > 0:
+        print(f"✅ {line_count} lines saved for song '{title}' - '{artist}'")
 
-            # Skip line if there are less than 2 words in the lyrics
-            if len(line_lyrics.split()) < 2:
-                continue
+# Main execution: Scrape all pages sequentially
+page = 1
+while scrape_page(page):
+    page += 1  # Move to the next page
 
-            # Clean the lyrics by removing unnecessary characters
-            line_lyrics = clean_lyrics(line_lyrics)
-            if not line_lyrics:
-                continue
-
-            # Check if chords exist and ensure that they have a corresponding lyric line
-            line_chords = ""
-            if chords and words:
-                line_chords = ">".join([chord.get_text(strip=True) for chord in chords])
-
-            # If chords are found but no corresponding lyrics, skip this line
-            if not words and chords:
-                continue
-
-            # If chords count is more than double the words count, skip this line
-            if len(line_chords.split(">")) > 2 * len(line_lyrics.split()):
-                continue
-
-            # Insert into database only if there's valid lyrics and chords
-            if line_lyrics and line_chords:
-                try:
-                    query = "INSERT INTO test (lyrics, chords) VALUES (%s, %s);"
-                    db.execute_sql(query, (line_lyrics, line_chords))
-                    line_count += 1
-                except Exception as e:
-                    print(f"Error while executing query for song '{song_url}': {e}")
-
-        # Print out the count of lines inserted for the current song
-        if line_count > 0:
-            print(f"✅ {line_count} lines for song '{song_url}' successfully inserted into PostgreSQL!")
-
-# Final report on the total number of songs with at least one line inserted
-successful_songs = len([song_url for song_url in song_links if line_count > 0])
-print(f"✅ {successful_songs} songs had at least one line successfully inserted into PostgreSQL.")
-
-# Close the WebDriver
+# Cleanup
 driver.quit()
-
-
+print("🎶 Scraping completed!")
