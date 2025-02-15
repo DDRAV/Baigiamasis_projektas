@@ -5,7 +5,7 @@ Database file to connect, execute commands and close connection
 import os
 from dotenv import load_dotenv
 import psycopg2
-import pandas as pd
+from psycopg2.extras import execute_batch
 
 load_dotenv()
 class DBEngine:
@@ -32,6 +32,22 @@ class DBEngine:
         except (Exception, psycopg2.Error) as error:
             print("Error while connecting to PostgreSQL", error)
             return None
+
+    def execute_batch(self, query, data_list):
+        """
+        Execute a batch of SQL queries using execute_batch.
+        :param query: SQL query to execute (with placeholders)
+        :param data_list: List of tuples containing the data to bind to the placeholders
+        :return: None
+        """
+        try:
+            execute_batch(self.cursor, query, data_list)
+            self.connection.commit()
+            print("Batch update successful!")
+        except (Exception, psycopg2.Error) as error:
+            print("Error while executing batch update", error)
+            self.connection.rollback()
+
 
     def execute_sql(self, query, params=None):
         """

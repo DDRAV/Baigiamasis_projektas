@@ -11,7 +11,7 @@ import time
 db = DBEngine()
 
 # Base URL for pagination
-BASE_URL = "https://www.songsterr.com/tags/guitar?page={}"
+BASE_URL = "https://www.songsterr.com/tags/guitar"
 HEADERS = {"User-Agent": "Mozilla/5.0"}
 
 # Selenium setup for browser automation
@@ -49,7 +49,7 @@ def clean_lyrics(lyrics):
 
 def is_duplicate(title, lyrics, chords):
     """Checks if the song entry already exists in the database."""
-    query = "SELECT COUNT(*) FROM test WHERE title = %s AND lyrics = %s AND chord_1 = %s;"
+    query = "SELECT COUNT(*) FROM test WHERE title = %s AND lyrics = %s AND chord_1 = %s AND chord_2 = %s AND chord_3 = %s AND chord_4 = %s;"
     result = db.execute_sql(query, (title, lyrics, chords[0] if chords else "0"))
     return result and result[0][0] > 0  # If count > 0, it means entry exists
 
@@ -101,6 +101,9 @@ def process_song(song_url):
     title = title_tag.get_text(strip=True) if title_tag else "Unknown"
     artist = artist_tag.get_text(strip=True) if artist_tag else "Unknown"
 
+    # Remove "Chords" from the end of the title if it exists
+    title = re.sub(r"Chords$", "", title).strip()
+
     print(f"🎵 Title: {title} | 🎤 Artist: {artist}")
 
     lines = soup.find_all("p", class_="C5zdi")  # Extract lyrics & chords
@@ -132,12 +135,12 @@ def process_song(song_url):
             continue
 
         # **NEW FILTER: Skip if there are more than 6 chords**
-        if len(chord_list) > 6:
-            print(f"⚠️ Skipping line with more than 6 chords: '{chord_list}'")
+        if len(chord_list) > 4:
+            print(f"⚠️ Skipping line with more than 4 chords: '{chord_list}'")
             continue
 
-        # Pad chords to ensure we have exactly 6 columns
-        chord_list += ["0"] * (6 - len(chord_list))
+        # Pad chords to ensure we have exactly 4 columns
+        chord_list += ["0"] * (4 - len(chord_list))
 
         # Check if this entry already exists
         if is_duplicate(title, line_lyrics, chord_list):
@@ -148,8 +151,8 @@ def process_song(song_url):
         if line_lyrics:
             try:
                 query = """
-                    INSERT INTO test (title, artist, lyrics, chord_1, chord_2, chord_3, chord_4, chord_5, chord_6)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
+                    INSERT INTO test (title, artist, lyrics, chord_1, chord_2, chord_3, chord_4)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s);
                 """
                 db.execute_sql(query, (title, artist, line_lyrics, *chord_list))
                 line_count += 1
@@ -160,9 +163,8 @@ def process_song(song_url):
         print(f"✅ {line_count} lines saved for song '{title}' - '{artist}'")
 
 # Main execution: Scrape all pages sequentially
-page = 1
-while scrape_page(page):
-    page += 1  # Move to the next page
+#for page in range(1, 53):  # Loop through pages 1 to 50
+scrape_page(BASE_URL)
 
 # Cleanup
 driver.quit()

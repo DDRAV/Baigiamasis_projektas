@@ -1,3 +1,4 @@
 
 /.env
 /myenv
+src/lyrics_tfidf_cleaned.csv
