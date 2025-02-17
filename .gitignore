@@ -2,3 +2,5 @@
 /.env
 /myenv
 src/lyrics_tfidf_cleaned.csv
+src/cc.en.300.vec
+src/lyrics_fasttext.csv

@@ -33,6 +33,7 @@ def normalize_chord(chord):
     chord = chord.replace("(", "").replace(")", "").replace("♯", "#").replace("Bd", "B").replace("Ems", "Em")
     chord = chord.replace("Fa", "F").replace("Amm", "Am").replace("Dd", "D").replace("Fmj", "F").replace("Famj", "F")
     chord = chord.replace("Fis", "E").replace("Dsu", "D").replace("Bi", "B").replace("Bim", "B").replace("Dim", "D")
+    chord = chord.replace("dim", "m").replace("i", "")
     # Convert slash chords to main chord (e.g., "C/E" -> "C")
     if "/" in chord:
         chord = chord.split("/")[0]
