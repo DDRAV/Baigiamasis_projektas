@@ -2,10 +2,11 @@ import pandas as pd
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras.models import Sequential, Model
-from tensorflow.keras.layers import LSTM, Reshape, Dense, Dropout, Bidirectional, Input, Flatten, MultiHeadAttention, \
-    LayerNormalization
+from tensorflow.keras.layers import LSTM, Reshape, Dense, Dropout, Bidirectional, Input, Flatten, MultiHeadAttention, LayerNormalization
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OrdinalEncoder, StandardScaler
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_absolute_error, mean_squared_error
 from nltk.translate.bleu_score import sentence_bleu
 from db_engine import DBEngine  # Import your DB connection class
 
@@ -36,6 +37,9 @@ X_train, X_test, Y_train, Y_test = train_test_split(X, Y, test_size=0.2, random_
 
 print("✅ Data preparation complete!")
 
+# 🔹 Reverse the Ordinal Encoding (for BLEU Score Evaluation)
+def decode_chords(encoded_chords):
+    return encoder.inverse_transform(encoded_chords)
 
 # 🔹 Define LSTM Model
 def build_lstm_model():
@@ -48,11 +52,10 @@ def build_lstm_model():
         Dropout(0.2),
         LSTM(128),
         Dropout(0.2),
-        Dense(4, activation="linear")  # Predict 4 chords (instead of 200)
+        Dense(4, activation="linear")  # Predict 4 chords * 50D embeddings
     ])
     model.compile(optimizer="adam", loss="mse", metrics=["mae"])
     return model
-
 
 # 🔹 Define Transformer Model
 class TransformerBlock(tf.keras.layers.Layer):
@@ -69,17 +72,13 @@ class TransformerBlock(tf.keras.layers.Layer):
         self.dropout2 = Dropout(rate)
 
     def call(self, inputs):
-        # Reshape inputs to have shape (batch_size, 1, embed_dim)
         inputs = tf.expand_dims(inputs, axis=1)  # Adding time dimension (timesteps=1)
-
-        # Self-attention with inputs as both query and value
         attn_output = self.att(inputs, inputs)
         attn_output = self.dropout1(attn_output)
         out1 = self.norm1(inputs + attn_output)  # Add residual connection
         ffn_output = self.ffn(out1)
         ffn_output = self.dropout2(ffn_output)
         return self.norm2(out1 + ffn_output)  # Add residual connection
-
 
 def build_transformer_model():
     input_layer = Input(shape=(300,))  # Input shape is (300,)
@@ -91,28 +90,80 @@ def build_transformer_model():
     model.compile(optimizer="adam", loss="mse", metrics=["mae"])
     return model
 
+# 🔹 Train Random Forest Model
+print("Training Random Forest Model...")
+rf_model = RandomForestRegressor(n_estimators=3, random_state=42, verbose=0)  # Set n_estimators to a small value for quick testing
+rf_model.fit(X_train, Y_train)  # Train the model on the entire training data
+print("Random Forest Model training complete!")
 
-# 🔹 Train Models
+# 🔹 Train Neural Models
 lstm_model = build_lstm_model()
 transformer_model = build_transformer_model()
 
-# Train LSTM Model
-lstm_model.fit(X_train, Y_train, epochs=20, batch_size=32, validation_data=(X_test, Y_test))
-print("LSTM model training complete!")
+try:
+    print("Training LSTM Model...")
+    lstm_model.fit(X_train, Y_train, epochs=20, batch_size=32, validation_data=(X_test, Y_test), verbose=1)
+    print("LSTM Model training complete!")
+except Exception as e:
+    print(f"Error during LSTM model training: {e}")
 
-# Train Transformer Model
-transformer_model.fit(X_train, Y_train, epochs=20, batch_size=32, validation_data=(X_test, Y_test))
-print("Transformer model training complete!")
+try:
+    print("Training Transformer Model...")
+    transformer_model.fit(X_train, Y_train, epochs=20, batch_size=32, validation_data=(X_test, Y_test), verbose=1)
+    print("Transformer Model training complete!")
+except Exception as e:
+    print(f"Error during Transformer model training: {e}")
 
+# 🔹 Evaluate Random Forest Model
+try:
+    print("Evaluating Random Forest Model...")
+    rf_predictions = rf_model.predict(X_test)
+    rf_mae = mean_absolute_error(Y_test, rf_predictions)
+    rf_mse = mean_squared_error(Y_test, rf_predictions)
 
-# 🔹 BLEU Score Evaluation
+    print("Random Forest Model Evaluation:")
+    print(f"MAE: {rf_mae}")
+    print(f"MSE: {rf_mse}")
+except Exception as e:
+    print(f"Error during Random Forest evaluation: {e}")
+
+# 🔹 BLEU Score Calculation
 def calculate_bleu_score(real_chords, predicted_chords):
     return sentence_bleu([real_chords], predicted_chords)
 
+# 🔹 Generate Predictions from Models
+try:
+    print("Generating predictions from LSTM model...")
+    lstm_predictions = lstm_model.predict(X_test)
+    print("LSTM predictions complete!")
+except Exception as e:
+    print(f"Error during LSTM prediction: {e}")
 
-# Example Evaluation (Needs real and predicted chord conversion back to names)
-real_chords = ["C", "G", "Am", "F"]
-predicted_chords = ["C", "G", "Em", "F"]
-print("BLEU Score:", calculate_bleu_score(real_chords, predicted_chords))
+try:
+    print("Generating predictions from Transformer model...")
+    transformer_predictions = transformer_model.predict(X_test)
+    print("Transformer predictions complete!")
+except Exception as e:
+    print(f"Error during Transformer prediction: {e}")
 
+# 🔹 Decode Predictions to Chords
+lstm_predictions_chords = decode_chords(lstm_predictions)
+transformer_predictions_chords = decode_chords(transformer_predictions)
+rf_predictions_chords = decode_chords(rf_predictions)
+
+# 🔹 Convert Y_test to Actual Chord Names
+Y_test_chords = decode_chords(Y_test)
+
+# 🔹 Calculate BLEU Score for Each Model
+lstm_bleu = calculate_bleu_score(Y_test_chords[0], lstm_predictions_chords[0])
+transformer_bleu = calculate_bleu_score(Y_test_chords[0], transformer_predictions_chords[0])
+rf_bleu = calculate_bleu_score(Y_test_chords[0], rf_predictions_chords[0])
+
+# 🔹 Print BLEU Scores for Each Model
+print("BLEU Scores for Each Model:")
+print(f"LSTM BLEU Score: {lstm_bleu}")
+print(f"Transformer BLEU Score: {transformer_bleu}")
+print(f"Random Forest BLEU Score: {rf_bleu}")
+
+# 🔹 Output final metrics
 print("✅ Model training & evaluation complete!")
