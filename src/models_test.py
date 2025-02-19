@@ -39,7 +39,13 @@ print("✅ Data preparation complete!")
 
 # 🔹 Reverse the Ordinal Encoding (for BLEU Score Evaluation)
 def decode_chords(encoded_chords):
-    return encoder.inverse_transform(encoded_chords)
+    # Ensure the values are within the valid range of the encoder's categories
+    try:
+        return encoder.inverse_transform(encoded_chords)
+    except IndexError as e:
+        print(f"Error in decoding chords: {e}")
+        print("Encoded chords:", encoded_chords)
+        return None
 
 # 🔹 Define LSTM Model
 def build_lstm_model():
@@ -92,8 +98,8 @@ def build_transformer_model():
 
 # 🔹 Train Random Forest Model
 print("Training Random Forest Model...")
-rf_model = RandomForestRegressor(n_estimators=3, random_state=42, verbose=0)  # Set n_estimators to a small value for quick testing
-rf_model.fit(X_train, Y_train)  # Train the model on the entire training data
+#rf_model = RandomForestRegressor(n_estimators=100, random_state=42, verbose=0)  # Set n_estimators to a small value for quick testing
+#rf_model.fit(X_train, Y_train)  # Train the model on the entire training data
 print("Random Forest Model training complete!")
 
 # 🔹 Train Neural Models
@@ -102,30 +108,30 @@ transformer_model = build_transformer_model()
 
 try:
     print("Training LSTM Model...")
-    lstm_model.fit(X_train, Y_train, epochs=20, batch_size=32, validation_data=(X_test, Y_test), verbose=1)
+    lstm_model.fit(X_train, Y_train, epochs=3, batch_size=32, validation_data=(X_test, Y_test), verbose=1)
     print("LSTM Model training complete!")
 except Exception as e:
     print(f"Error during LSTM model training: {e}")
 
 try:
     print("Training Transformer Model...")
-    transformer_model.fit(X_train, Y_train, epochs=20, batch_size=32, validation_data=(X_test, Y_test), verbose=1)
+    transformer_model.fit(X_train, Y_train, epochs=3, batch_size=32, validation_data=(X_test, Y_test), verbose=1)
     print("Transformer Model training complete!")
 except Exception as e:
     print(f"Error during Transformer model training: {e}")
 
 # 🔹 Evaluate Random Forest Model
-try:
-    print("Evaluating Random Forest Model...")
-    rf_predictions = rf_model.predict(X_test)
-    rf_mae = mean_absolute_error(Y_test, rf_predictions)
-    rf_mse = mean_squared_error(Y_test, rf_predictions)
-
-    print("Random Forest Model Evaluation:")
-    print(f"MAE: {rf_mae}")
-    print(f"MSE: {rf_mse}")
-except Exception as e:
-    print(f"Error during Random Forest evaluation: {e}")
+# try:
+#     print("Evaluating Random Forest Model...")
+#     rf_predictions = rf_model.predict(X_test)
+#     rf_mae = mean_absolute_error(Y_test, rf_predictions)
+#     rf_mse = mean_squared_error(Y_test, rf_predictions)
+#
+#     print("Random Forest Model Evaluation:")
+#     print(f"MAE: {rf_mae}")
+#     print(f"MSE: {rf_mse}")
+# except Exception as e:
+#     print(f"Error during Random Forest evaluation: {e}")
 
 # 🔹 BLEU Score Calculation
 def calculate_bleu_score(real_chords, predicted_chords):
@@ -135,35 +141,50 @@ def calculate_bleu_score(real_chords, predicted_chords):
 try:
     print("Generating predictions from LSTM model...")
     lstm_predictions = lstm_model.predict(X_test)
-    print("LSTM predictions complete!")
+    print("LSTM Predictions:", lstm_predictions)
 except Exception as e:
     print(f"Error during LSTM prediction: {e}")
 
 try:
     print("Generating predictions from Transformer model...")
     transformer_predictions = transformer_model.predict(X_test)
-    print("Transformer predictions complete!")
+    print("Transformer Predictions:", transformer_predictions)
 except Exception as e:
     print(f"Error during Transformer prediction: {e}")
 
-# 🔹 Decode Predictions to Chords
+# Užtikriname, kad reikšmės būtų teisingame intervale
+lstm_predictions = np.round(lstm_predictions).astype(int)
+transformer_predictions = np.round(transformer_predictions).astype(int)
+
+lstm_predictions = np.clip(lstm_predictions, 0, len(encoder.categories_[0]) - 1)
+transformer_predictions = np.clip(transformer_predictions, 0, len(encoder.categories_[0]) - 1)
+
+# 🔹 Decode Predictions to Chords (with additional checks)
 lstm_predictions_chords = decode_chords(lstm_predictions)
 transformer_predictions_chords = decode_chords(transformer_predictions)
-rf_predictions_chords = decode_chords(rf_predictions)
 
-# 🔹 Convert Y_test to Actual Chord Names
-Y_test_chords = decode_chords(Y_test)
+# Check if decoding was successful before continuing
+if lstm_predictions_chords is not None and transformer_predictions_chords is not None:
+    #rf_predictions_chords = decode_chords(rf_predictions)
 
-# 🔹 Calculate BLEU Score for Each Model
-lstm_bleu = calculate_bleu_score(Y_test_chords[0], lstm_predictions_chords[0])
-transformer_bleu = calculate_bleu_score(Y_test_chords[0], transformer_predictions_chords[0])
-rf_bleu = calculate_bleu_score(Y_test_chords[0], rf_predictions_chords[0])
+    # 🔹 Convert Y_test to Actual Chord Names
+    Y_test_chords = decode_chords(Y_test)
 
-# 🔹 Print BLEU Scores for Each Model
-print("BLEU Scores for Each Model:")
-print(f"LSTM BLEU Score: {lstm_bleu}")
-print(f"Transformer BLEU Score: {transformer_bleu}")
-print(f"Random Forest BLEU Score: {rf_bleu}")
+    # 🔹 Calculate BLEU Score for Each Model
+    lstm_bleu = calculate_bleu_score(Y_test_chords[0], lstm_predictions_chords[0])
+    transformer_bleu = calculate_bleu_score(Y_test_chords[0], transformer_predictions_chords[0])
+    #rf_bleu = calculate_bleu_score(Y_test_chords[0], rf_predictions_chords[0])
+
+    # 🔹 Print BLEU Scores for Each Model
+    print("BLEU Scores for Each Model:")
+    print("LSTM sugeneruoti akordai:", lstm_predictions_chords[0])
+    print("Transformer sugeneruoti akordai:", transformer_predictions_chords[0])
+
+    print(f"LSTM BLEU Score: {lstm_bleu}")
+    print(f"Transformer BLEU Score: {transformer_bleu}")
+    #print(f"Random Forest BLEU Score: {rf_bleu}")
+else:
+    print("Prediction decoding failed. Skipping BLEU score calculation.")
 
 # 🔹 Output final metrics
 print("✅ Model training & evaluation complete!")
