@@ -106,6 +106,7 @@ precisions = [precision_score(Y_test[:, i], Y_pred_test[:, i], average='weighted
 recalls = [recall_score(Y_test[:, i], Y_pred_test[:, i], average='weighted', zero_division=0) for i in range(Y_test.shape[1])]
 f1_scores = [f1_score(Y_test[:, i], Y_pred_test[:, i], average='weighted') for i in range(Y_test.shape[1])]
 
+
 print(f"✅ Test Avg Accuracy: {np.mean(accuracies):.4f}")
 print(f"✅ Test Avg Precision: {np.mean(precisions):.4f}")
 print(f"✅ Test Avg Recall: {np.mean(recalls):.4f}")
@@ -115,6 +116,101 @@ print(f"✅ Test Avg F1 Score: {np.mean(f1_scores):.4f}")
 print("\n🔎 Sample Predictions:")
 for i in range(5):
     print(f"Real: {real_chords[i]} -> Predicted: {predicted_chords[i]}")
+
+# Create a DataFrame to store results
+param_results = []
+
+for i, model in enumerate(best_models):
+    params = model.get_params()
+    accuracy = cross_val_results[f"chord_{i + 1}"]
+    param_results.append({
+        "Chord": i + 1,
+        "n_estimators": params["n_estimators"],
+        "max_depth": params["max_depth"],
+        "min_samples_split": params["min_samples_split"],
+        "min_samples_leaf": params["min_samples_leaf"],
+        "criterion": params["criterion"],
+        "Accuracy": accuracy
+    })
+
+# Convert to DataFrame
+param_df = pd.DataFrame(param_results)
+
+# Display results as a table
+print("\n📊 Hyperparameter Impact on Accuracy:")
+print(param_df.sort_values(by="Accuracy", ascending=False))
+
+# Plot accuracy vs. different hyperparameters
+fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+
+sns.boxplot(x="n_estimators", y="Accuracy", data=param_df, ax=axes[0, 0])
+axes[0, 0].set_title("Accuracy vs. n_estimators")
+
+sns.boxplot(x="max_depth", y="Accuracy", data=param_df, ax=axes[0, 1])
+axes[0, 1].set_title("Accuracy vs. max_depth")
+
+sns.boxplot(x="min_samples_split", y="Accuracy", data=param_df, ax=axes[0, 2])
+axes[0, 2].set_title("Accuracy vs. min_samples_split")
+
+sns.boxplot(x="min_samples_leaf", y="Accuracy", data=param_df, ax=axes[1, 0])
+axes[1, 0].set_title("Accuracy vs. min_samples_leaf")
+
+sns.boxplot(x="criterion", y="Accuracy", data=param_df, ax=axes[1, 1])
+axes[1, 1].set_title("Accuracy vs. criterion")
+
+plt.tight_layout()
+plt.show()
+
+
+
+# 1️⃣ Tikslumo analizė (accuracy per chord)
+fig, ax = plt.subplots()
+ax.bar(range(1, 5), accuracies, color='skyblue')
+ax.set_xticks(range(1, 5))
+ax.set_xticklabels([f'Chord {i}' for i in range(1, 5)])
+ax.set_ylabel("Accuracy")
+ax.set_title("Accuracy per Chord")
+plt.show()
+
+# 2️⃣ Sanklodos matrica (Confusion Matrix kiekvienam akordui)
+fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+for i, ax in enumerate(axes.flat):
+    cm = confusion_matrix(Y_test[:, i], Y_pred_test[:, i])
+    cm_labels = encoder.categories_[i]  # Get decoded chord labels
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax, xticklabels=cm_labels, yticklabels=cm_labels)
+    ax.set_title(f'Confusion Matrix - Chord {i+1}')
+    ax.set_xlabel("Predicted")
+    ax.set_ylabel("Actual")
+plt.tight_layout()
+plt.show()
+
+# 3️⃣ 4-gramo tikslumo vizualizacija
+fig, ax = plt.subplots()
+ax.hist([1 if real == pred else 0 for real, pred in zip(real_chords, predicted_chords)], bins=2, color='green', alpha=0.7)
+ax.set_xticks([0, 1])
+ax.set_xticklabels(['Incorrect', 'Correct'])
+ax.set_ylabel("Count")
+ax.set_title("4-Gram Accuracy Distribution")
+plt.show()
+
+# 4️⃣ Klaidų analizė
+fig, ax = plt.subplots()
+errors = [sum(1 for real, pred in zip(r, p) if real != pred) for r, p in zip(real_chords, predicted_chords)]
+ax.hist(errors, bins=range(5), color='red', alpha=0.7)
+ax.set_xticks(range(5))
+ax.set_xlabel("Number of Errors per 4-Chord Sequence")
+ax.set_ylabel("Count")
+ax.set_title("Error Distribution Across 4-Chord Sequences")
+plt.show()
+
+# for i in range(Y_test.shape[1]):
+#     cm = confusion_matrix(Y_test[:, i], Y_pred_test[:, i])
+#     print(f"Confusion Matrix for Chord {i+1}:")
+#     print(cm)
+#     print("-" * 40)
+
+
+
 
 # 🎵 Predict chords from user input lyrics
 def predict_chords_from_lyrics():
@@ -181,50 +277,3 @@ def predict_chords_from_lyrics():
 predict_chords_from_lyrics()
 
 
-
-
-# 1️⃣ Tikslumo analizė (accuracy per chord)
-fig, ax = plt.subplots()
-ax.bar(range(1, 5), accuracies, color='skyblue')
-ax.set_xticks(range(1, 5))
-ax.set_xticklabels([f'Chord {i}' for i in range(1, 5)])
-ax.set_ylabel("Accuracy")
-ax.set_title("Accuracy per Chord")
-plt.show()
-
-# 2️⃣ Sanklodos matrica (Confusion Matrix kiekvienam akordui)
-fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-for i, ax in enumerate(axes.flat):
-    cm = confusion_matrix(Y_test[:, i], Y_pred_test[:, i])
-    cm_labels = encoder.categories_[i]  # Get decoded chord labels
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax, xticklabels=cm_labels, yticklabels=cm_labels)
-    ax.set_title(f'Confusion Matrix - Chord {i+1}')
-    ax.set_xlabel("Predicted")
-    ax.set_ylabel("Actual")
-plt.tight_layout()
-plt.show()
-
-# 3️⃣ 4-gramo tikslumo vizualizacija
-fig, ax = plt.subplots()
-ax.hist([1 if real == pred else 0 for real, pred in zip(real_chords, predicted_chords)], bins=2, color='green', alpha=0.7)
-ax.set_xticks([0, 1])
-ax.set_xticklabels(['Incorrect', 'Correct'])
-ax.set_ylabel("Count")
-ax.set_title("4-Gram Accuracy Distribution")
-plt.show()
-
-# 4️⃣ Klaidų analizė
-fig, ax = plt.subplots()
-errors = [sum(1 for real, pred in zip(r, p) if real != pred) for r, p in zip(real_chords, predicted_chords)]
-ax.hist(errors, bins=range(5), color='red', alpha=0.7)
-ax.set_xticks(range(5))
-ax.set_xlabel("Number of Errors per 4-Chord Sequence")
-ax.set_ylabel("Count")
-ax.set_title("Error Distribution Across 4-Chord Sequences")
-plt.show()
-
-# for i in range(Y_test.shape[1]):
-#     cm = confusion_matrix(Y_test[:, i], Y_pred_test[:, i])
-#     print(f"Confusion Matrix for Chord {i+1}:")
-#     print(cm)
-#     print("-" * 40)
