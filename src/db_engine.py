@@ -88,7 +88,7 @@ if __name__ == "__main__":
         result = db.execute_sql(
             #"INSERT INTO test (lyrics, chords) VALUES ('So close no matter how far, couldnt be much more from the heart', 'Em > D > C > Em > D > C');"
             #"SELECT * FROM test;"
-            "DELETE FROM test;"
+            #"DELETE FROM test;"
 ) # Example query
         print(f"{result}")
         print(f"Command executed")

@@ -1,5 +1,7 @@
 import pandas as pd
 import numpy as np
+import joblib
+import os
 from gensim.models import KeyedVectors
 import matplotlib.pyplot as plt
 from sklearn.ensemble import RandomForestClassifier
@@ -37,27 +39,27 @@ mask = filter_rare_sequences(Y)
 Y, X_base = Y[mask], X_base[mask]
 
 # 📌 Stratified Split ensuring distribution for all chords
-def stratified_split(Y, test_size=0.1, random_state=42):
-    unique_combinations, indices = np.unique(Y, axis=0, return_inverse=True)
-    if np.min(np.bincount(indices)) < 2:
-        print("⚠️ Warning: Some chord sequences are too rare for stratified splitting. Using random split instead.")
-        return train_test_split(np.arange(len(Y)), test_size=test_size, random_state=random_state)
-    else:
-        return train_test_split(np.arange(len(Y)), test_size=test_size, stratify=indices, random_state=random_state)
+def stratified_split_by_chord_count(Y, test_size=0.1, random_state=42):
+    num_chords_per_row = np.count_nonzero(~np.isnan(Y), axis=1)  # Count non-NaN values per row
 
-train_idx, test_idx = stratified_split(Y)
+    # Perform stratified split based on the number of chords per lyrics line
+    train_idx, test_idx = train_test_split(
+        np.arange(len(Y)), test_size=test_size, stratify=num_chords_per_row, random_state=random_state
+    )
+    return train_idx, test_idx
+train_idx, test_idx = stratified_split_by_chord_count(Y)
 X_train, X_test = X_base[train_idx], X_base[test_idx]
 Y_train, Y_test = Y[train_idx], Y[test_idx]
 
 # 3️⃣ Define Hyperparameters
 param_grid = {
-    'n_estimators': [10, 20],
-    'max_depth': [10, 20],
-    'min_samples_split': [2],
-    'min_samples_leaf': [1]
+    'n_estimators': [200, 400],
+    'max_depth': [50, None],
+    'min_samples_split': [5],
+    'min_samples_leaf': [2],
+    'criterion': ["entropy"]
 }
 cv_folds = 3
-
 
 best_models = []
 rf_models = []
@@ -73,7 +75,7 @@ for i in range(Y_train.shape[1]):
         X_test_aug = np.hstack((X_test_aug, Y_test[:, :i]))
 
     rf = RandomForestClassifier(random_state=42, class_weight='balanced', verbose=1)
-    grid_search = GridSearchCV(rf, param_grid, cv=cv_folds, scoring='accuracy', verbose=2, n_jobs=-1)
+    grid_search = GridSearchCV(rf, param_grid, cv=cv_folds, scoring='accuracy', verbose=1, n_jobs=-1)
     grid_search.fit(X_train_aug, Y_train[:, i])
     best_model = grid_search.best_estimator_
 
@@ -100,11 +102,20 @@ predicted_chords = [decode_chords(y) for y in Y_pred_test]
 for i, model in enumerate(best_models):
     print(f"🎯 Best parameters for Chord {i+1}: {model.get_params()}")
 
+os.makedirs("saved_models", exist_ok=True)
+
+# Save each trained model
+for i, model in enumerate(rf_models):
+    joblib.dump(model, f"saved_models/rf_model_chord_{i+1}.pkl")
+
+print("✅ Random Forest models saved successfully!")
+
 # 7️⃣ Evaluate Performance on Test Data
 accuracies = [accuracy_score(Y_test[:, i], Y_pred_test[:, i]) for i in range(Y_test.shape[1])]
 precisions = [precision_score(Y_test[:, i], Y_pred_test[:, i], average='weighted', zero_division=0) for i in range(Y_test.shape[1])]
 recalls = [recall_score(Y_test[:, i], Y_pred_test[:, i], average='weighted', zero_division=0) for i in range(Y_test.shape[1])]
 f1_scores = [f1_score(Y_test[:, i], Y_pred_test[:, i], average='weighted') for i in range(Y_test.shape[1])]
+
 
 print(f"✅ Test Avg Accuracy: {np.mean(accuracies):.4f}")
 print(f"✅ Test Avg Precision: {np.mean(precisions):.4f}")
@@ -116,48 +127,6 @@ print("\n🔎 Sample Predictions:")
 for i in range(5):
     print(f"Real: {real_chords[i]} -> Predicted: {predicted_chords[i]}")
 
-# 🎵 Predict chords from user input lyrics
-def predict_chords_from_lyrics():
-    user_input = input("\n🎤 Enter a lyrics line: ")
-
-    # 🔹 Load precomputed FastText embeddings
-    fasttext_df = pd.read_csv("lyrics_fasttext.csv")
-    scaler = StandardScaler()
-    X_base = scaler.fit_transform(fasttext_df.values)  # Normalize stored vectors
-
-    # 🔹 Generate embedding by averaging known vectors (if needed)
-    def get_embedding_from_lyrics(text, fasttext_df):
-        from nltk.tokenize import word_tokenize
-        words = word_tokenize(text.lower())
-        vectors = []
-
-        for word in words:
-            try:
-                word_vec = fasttext_df.loc[:, word].values  # Fetch word's embedding (if exists)
-                vectors.append(word_vec)
-            except KeyError:
-                continue  # Ignore words without embeddings
-
-        return np.mean(vectors, axis=0) if vectors else np.zeros(300)  # Return mean vector or zero
-
-    user_embedding = get_embedding_from_lyrics(user_input, fasttext_df).reshape(1, -1)
-    user_embedding = scaler.transform(user_embedding)  # Normalize input
-
-    # 🔹 Predict chords sequentially
-    Y_pred_user = np.zeros((1, Y.shape[1]), dtype=int)
-    X_user_seq = user_embedding
-
-    for i, model in enumerate(rf_models):
-        Y_pred_user[:, i] = model.predict(X_user_seq)
-        if i < Y.shape[1] - 1:
-            X_user_seq = np.hstack((X_user_seq, Y_pred_user[:, :i + 1]))
-
-    # 🔹 Decode and print predictions
-    predicted_chords_user = decode_chords(Y_pred_user[0])
-    print(f"🎶 Predicted Chords: {predicted_chords_user}")
-
-# Run prediction
-predict_chords_from_lyrics()
 
 
 
@@ -206,3 +175,72 @@ plt.show()
 #     print(f"Confusion Matrix for Chord {i+1}:")
 #     print(cm)
 #     print("-" * 40)
+
+
+
+
+# 🎵 Predict chords from user input lyrics
+def predict_chords_from_lyrics():
+    user_input = input("\n🎤 Enter a lyrics line: ")
+
+    # 🔹 Load precomputed FastText embeddings
+    fasttext_df = pd.read_csv("lyrics_fasttext.csv")
+    scaler = StandardScaler()
+    X_base = scaler.fit_transform(fasttext_df.values)  # Normalize stored vectors
+
+    # 🔹 Generate embedding from user input
+    def get_embedding_from_lyrics(text, fasttext_df):
+        from nltk.tokenize import word_tokenize
+        words = word_tokenize(text.lower())
+        vectors = []
+
+        for word in words:
+            try:
+                word_vec = fasttext_df.loc[:, word].values  # Fetch word's embedding (if exists)
+                vectors.append(word_vec)
+            except KeyError:
+                continue  # Ignore words without embeddings
+
+        return np.mean(vectors, axis=0) if vectors else np.zeros(300)  # Return mean vector or zero
+
+    user_embedding = get_embedding_from_lyrics(user_input, fasttext_df).reshape(1, -1)
+    user_embedding = scaler.transform(user_embedding)  # Normalize input
+
+    # 🔹 Predict chords sequentially
+    Y_pred_user = np.zeros((1, Y.shape[1]), dtype=int)
+    X_user_seq = user_embedding
+
+    for i, model in enumerate(rf_models):
+        Y_pred_user[:, i] = model.predict(X_user_seq)
+        if i < Y.shape[1] - 1:
+            X_user_seq = np.hstack((X_user_seq, Y_pred_user[:, :i + 1]))
+
+    # 🔹 Decode predicted chords
+    predicted_chords_user = decode_chords(Y_pred_user[0])
+    print(f"🎶 Predicted Chords: {predicted_chords_user}")
+
+    # 🔹 Search for matching chord sequences in the database
+    chord_query = f"""
+        SELECT artist, title, lyrics FROM test
+        WHERE chord_1 = '{predicted_chords_user[0]}' 
+        AND chord_2 = '{predicted_chords_user[1]}' 
+        AND chord_3 = '{predicted_chords_user[2]}' 
+        AND chord_4 = '{predicted_chords_user[3]}'
+        LIMIT 3;
+    """
+
+    matching_lyrics = db.execute_sql(chord_query)
+
+    # 🔹 Display results
+    if matching_lyrics:
+        print("\n🎵 Songs with the same chord progression:")
+        for i, row in enumerate(matching_lyrics, 1):
+            artist, title, lyrics = row  # Unpacking row values
+            print(f"{i}. {artist} - {title} - {lyrics}")
+    else:
+        print("❌ No matching songs found in the database.")
+
+# Run prediction
+predict_chords_from_lyrics()
+
+

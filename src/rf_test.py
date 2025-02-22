@@ -37,27 +37,27 @@ mask = filter_rare_sequences(Y)
 Y, X_base = Y[mask], X_base[mask]
 
 # 📌 Stratified Split ensuring distribution for all chords
-def stratified_split(Y, test_size=0.1, random_state=42):
-    unique_combinations, indices = np.unique(Y, axis=0, return_inverse=True)
-    if np.min(np.bincount(indices)) < 2:
-        print("⚠️ Warning: Some chord sequences are too rare for stratified splitting. Using random split instead.")
-        return train_test_split(np.arange(len(Y)), test_size=test_size, random_state=random_state)
-    else:
-        return train_test_split(np.arange(len(Y)), test_size=test_size, stratify=indices, random_state=random_state)
+def stratified_split_by_chord_count(Y, test_size=0.1, random_state=42):
+    num_chords_per_row = np.count_nonzero(~np.isnan(Y), axis=1)  # Count non-NaN values per row
 
-train_idx, test_idx = stratified_split(Y)
+    # Perform stratified split based on the number of chords per lyrics line
+    train_idx, test_idx = train_test_split(
+        np.arange(len(Y)), test_size=test_size, stratify=num_chords_per_row, random_state=random_state
+    )
+    return train_idx, test_idx
+train_idx, test_idx = stratified_split_by_chord_count(Y)
 X_train, X_test = X_base[train_idx], X_base[test_idx]
 Y_train, Y_test = Y[train_idx], Y[test_idx]
 
 # 3️⃣ Define Hyperparameters
 param_grid = {
-    'n_estimators': [50, 100, 200, 500],
-    'max_depth': [10, 20, 30, None],
-    'min_samples_split': [5, 10, 20, 50],
-    'min_samples_leaf': [2, 5, 10, 20],
-    'criterion': ["gini", "entropy"]
+    'n_estimators': [100, 200],
+    'max_depth': [20, 50],
+    'min_samples_split': [5],
+    'min_samples_leaf': [2],
+    'criterion': ["entropy"]
 }
-cv_folds = 5
+cv_folds = 3
 
 best_models = []
 rf_models = []
@@ -72,7 +72,7 @@ for i in range(Y_train.shape[1]):
         X_train_aug = np.hstack((X_train_aug, Y_train[:, :i]))
         X_test_aug = np.hstack((X_test_aug, Y_test[:, :i]))
 
-    rf = RandomForestClassifier(random_state=42, class_weight='balanced', verbose=1)
+    rf = RandomForestClassifier(random_state=42, class_weight='balanced', verbose=2)
     grid_search = GridSearchCV(rf, param_grid, cv=cv_folds, scoring='accuracy', verbose=2, n_jobs=-1)
     grid_search.fit(X_train_aug, Y_train[:, i])
     best_model = grid_search.best_estimator_
@@ -117,49 +117,6 @@ print("\n🔎 Sample Predictions:")
 for i in range(5):
     print(f"Real: {real_chords[i]} -> Predicted: {predicted_chords[i]}")
 
-# Create a DataFrame to store results
-param_results = []
-
-for i, model in enumerate(best_models):
-    params = model.get_params()
-    accuracy = cross_val_results[f"chord_{i + 1}"]
-    param_results.append({
-        "Chord": i + 1,
-        "n_estimators": params["n_estimators"],
-        "max_depth": params["max_depth"],
-        "min_samples_split": params["min_samples_split"],
-        "min_samples_leaf": params["min_samples_leaf"],
-        "criterion": params["criterion"],
-        "Accuracy": accuracy
-    })
-
-# Convert to DataFrame
-param_df = pd.DataFrame(param_results)
-
-# Display results as a table
-print("\n📊 Hyperparameter Impact on Accuracy:")
-print(param_df.sort_values(by="Accuracy", ascending=False))
-
-# Plot accuracy vs. different hyperparameters
-fig, axes = plt.subplots(2, 3, figsize=(15, 10))
-
-sns.boxplot(x="n_estimators", y="Accuracy", data=param_df, ax=axes[0, 0])
-axes[0, 0].set_title("Accuracy vs. n_estimators")
-
-sns.boxplot(x="max_depth", y="Accuracy", data=param_df, ax=axes[0, 1])
-axes[0, 1].set_title("Accuracy vs. max_depth")
-
-sns.boxplot(x="min_samples_split", y="Accuracy", data=param_df, ax=axes[0, 2])
-axes[0, 2].set_title("Accuracy vs. min_samples_split")
-
-sns.boxplot(x="min_samples_leaf", y="Accuracy", data=param_df, ax=axes[1, 0])
-axes[1, 0].set_title("Accuracy vs. min_samples_leaf")
-
-sns.boxplot(x="criterion", y="Accuracy", data=param_df, ax=axes[1, 1])
-axes[1, 1].set_title("Accuracy vs. criterion")
-
-plt.tight_layout()
-plt.show()
 
 
 
