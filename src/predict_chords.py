@@ -1,3 +1,17 @@
+"""
+Chord Prediction System Using Multiple Models
+
+This script loads trained models (Random Forest, LSTM, Transformer) and predicts chord sequences from song lyrics.
+It allows the user to input a lyrics line and returns chord predictions from all three models.
+
+Features:
+- Loads pre-trained models for chord prediction.
+- Uses FastText embeddings for lyrics representation.
+- Predicts chord sequences sequentially.
+- Searches for songs with matching chord progressions in the database.
+- Provides an interactive loop for multiple predictions.
+"""
+
 import numpy as np
 import pandas as pd
 import joblib
@@ -22,18 +36,18 @@ encoder.fit(chords_df[["chord_1", "chord_2", "chord_3", "chord_4"]])
 
 # 🔹 Load Trained Models
 def load_rf_models():
-    return [joblib.load(f"saved_models/rf_model_chord_{i+1}.pkl") for i in range(4)]
+    return [joblib.load(f"saved_models/rf_model_chord_{i + 1}.pkl") for i in range(4)]
 
 
 def load_lstm_models():
-    return [load_model(f"saved_models/lstm_model_chord_{i+1}") for i in range(4)]
+    return [load_model(f"saved_models/lstm_model_chord_{i + 1}.keras") for i in range(4)]
 
 
 def load_transformer_models():
-    return [load_model(f"saved_models/transformer_model_chord_{i+1}") for i in range(4)]
+    return [load_model(f"saved_models/transformer_model_chord_{i + 1}.keras") for i in range(4)]
 
 
-# Load all models into dictionaries
+# Load all models into a dictionary
 models = {
     "rf": load_rf_models(),
     "lstm": load_lstm_models(),
@@ -56,7 +70,7 @@ def predict_chords(user_embedding, model_list, model_type):
     for i, model in enumerate(model_list):
         if model_type == "rf":
             Y_pred_user[:, i] = model.predict(X_user_seq)
-        else:  # LSTM & Transformer need reshaping
+        else:  # LSTM & Transformer require reshaping
             X_user_seq_reshaped = X_user_seq.reshape((X_user_seq.shape[0], X_user_seq.shape[1], 1))
             Y_pred_user[:, i] = np.clip(np.round(model.predict(X_user_seq_reshaped)).flatten(), 0,
                                         len(encoder.categories_[i]) - 1)
@@ -78,7 +92,8 @@ def predict_chords_from_lyrics():
         user_embedding = get_embedding_from_lyrics(user_input, fasttext_df).reshape(1, -1)
         user_embedding = scaler.transform(user_embedding)
 
-        predictions = {model_type: predict_chords(user_embedding, model_list, model_type) for model_type, model_list in models.items()}
+        predictions = {model_type: predict_chords(user_embedding, model_list, model_type) for model_type, model_list in
+                       models.items()}
 
         print("\n🎶 Predicted Chords:")
         for model_type, chords in predictions.items():
@@ -105,14 +120,13 @@ def predict_chords_from_lyrics():
             else:
                 print(f"❌ No matching songs found for {model_type.upper()} model.")
 
-            # Provide two clear choices to the user
-        while True:  # Inner loop for handling Yes/No input
+        while True:
             rerun_choice = input("\n🔁 Would you like to predict another lyrics line? (Yes/No): ").strip().lower()
             if rerun_choice == "yes":
-                break  # Exit inner loop to rerun the function
+                break  # Restart loop
             elif rerun_choice == "no":
                 print("👋 Exiting prediction system. Have a great day!")
-                return  # Exit the function completely
+                return  # Exit function
             else:
                 print("❌ Invalid input! Please type 'Yes' or 'No'.")
 

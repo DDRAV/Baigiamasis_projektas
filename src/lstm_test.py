@@ -58,7 +58,7 @@ def build_lstm_model(input_shape, units=64, dropout_rate=0.2, learning_rate=0.00
 
 # 4️⃣ Hyperparameter Tuning
 param_grid = [
-    {"units": 64, "dropout_rate": 0.2, "learning_rate": 0.001, "epochs": 50, "batch_size": 64}  # Increased epochs for early stopping
+    {"units": 64, "dropout_rate": 0.3, "learning_rate": 0.001, "epochs": 50, "batch_size": 64}  # Increased epochs for early stopping
 ]
 
 best_models = []
@@ -116,7 +116,7 @@ for i, model in enumerate(best_models):
 
 # Save LSTM models
 for i, model in enumerate(best_models):
-    model.save(f"saved_models/lstm_model_chord_{i+1}")
+    model.save(f"saved_models/lstm_model_chord_{i+1}.keras")
 
 print("✅ LSTM models saved successfully!")
 

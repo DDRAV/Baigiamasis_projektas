@@ -1,5 +1,7 @@
 import pandas as pd
 import numpy as np
+import joblib
+import os
 from gensim.models import KeyedVectors
 import matplotlib.pyplot as plt
 from sklearn.ensemble import RandomForestClassifier
@@ -51,13 +53,13 @@ Y_train, Y_test = Y[train_idx], Y[test_idx]
 
 # 3️⃣ Define Hyperparameters
 param_grid = {
-    'n_estimators': [100, 200],
+    'n_estimators': [200],
     'max_depth': [20, 50],
     'min_samples_split': [5],
     'min_samples_leaf': [2],
     'criterion': ["entropy"]
 }
-cv_folds = 3
+cv_folds = 2
 
 best_models = []
 rf_models = []
@@ -72,8 +74,8 @@ for i in range(Y_train.shape[1]):
         X_train_aug = np.hstack((X_train_aug, Y_train[:, :i]))
         X_test_aug = np.hstack((X_test_aug, Y_test[:, :i]))
 
-    rf = RandomForestClassifier(random_state=42, class_weight='balanced', verbose=2)
-    grid_search = GridSearchCV(rf, param_grid, cv=cv_folds, scoring='accuracy', verbose=2, n_jobs=-1)
+    rf = RandomForestClassifier(random_state=42, class_weight='balanced', verbose=1, n_jobs=-1)
+    grid_search = GridSearchCV(rf, param_grid, cv=cv_folds, scoring='accuracy', verbose=1, n_jobs=-1)
     grid_search.fit(X_train_aug, Y_train[:, i])
     best_model = grid_search.best_estimator_
 
@@ -99,6 +101,14 @@ predicted_chords = [decode_chords(y) for y in Y_pred_test]
 
 for i, model in enumerate(best_models):
     print(f"🎯 Best parameters for Chord {i+1}: {model.get_params()}")
+
+os.makedirs("saved_models", exist_ok=True)
+
+# Save each trained model
+for i, model in enumerate(rf_models):
+    joblib.dump(model, f"saved_models/rf_model_chord_{i+1}.pkl")
+
+print("✅ Random Forest models saved successfully!")
 
 # 7️⃣ Evaluate Performance on Test Data
 accuracies = [accuracy_score(Y_test[:, i], Y_pred_test[:, i]) for i in range(Y_test.shape[1])]
