@@ -18,7 +18,7 @@ import numpy as np
 import os
 import tensorflow as tf
 from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Input, Dense, Dropout, LayerNormalization, MultiHeadAttention, Add, Lambda
+from tensorflow.keras.layers import Input, Dense, Dropout, LayerNormalization, MultiHeadAttention, Add, Lambda, Reshape
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import EarlyStopping
 from sklearn.model_selection import train_test_split
@@ -55,8 +55,23 @@ Y_train, Y_test = Y[train_idx], Y[test_idx]
 
 
 # 3️⃣ Transformer Block
+# 3️⃣ Transformer Block (Updated)
 def transformer_block(inputs, head_size=64, num_heads=4, ff_dim=128, dropout=0.2):
-    x = Lambda(lambda t: tf.expand_dims(t, axis=1))(inputs)  # Reshape for attention
+    """
+    Transformer block with Multi-Head Attention and Feed-Forward layers.
+
+    Args:
+        inputs (tensor): Input tensor.
+        head_size (int): Size of each attention head.
+        num_heads (int): Number of attention heads.
+        ff_dim (int): Hidden layer size in feed-forward network.
+        dropout (float): Dropout rate.
+
+    Returns:
+        tensor: Output tensor after Transformer processing.
+    """
+
+    x = Reshape((1, inputs.shape[-1]))(inputs)  # ✅ Replace Lambda with Reshape
 
     attn_output = MultiHeadAttention(num_heads=num_heads, key_dim=head_size)(x, x)
     attn_output = Dropout(dropout)(attn_output)
@@ -69,8 +84,7 @@ def transformer_block(inputs, head_size=64, num_heads=4, ff_dim=128, dropout=0.2
     ffn_output = Add()([attn_output, ffn_output])
 
     x = LayerNormalization(epsilon=1e-6)(ffn_output)
-    return Lambda(lambda t: tf.squeeze(t, axis=1))(x)
-
+    return Reshape((inputs.shape[-1],))(x)  # ✅ Ensure correct reshaping
 
 # 4️⃣ Define Transformer Model
 def build_transformer_model(input_dim, head_size=64, num_heads=4, ff_dim=128, dropout=0.2, learning_rate=0.001):

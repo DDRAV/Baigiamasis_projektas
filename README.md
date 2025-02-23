@@ -46,8 +46,8 @@ Each model is trained using a dataset of lyrics and their corresponding chord pr
 | Model         | AVG Accuracy | AVG Precision | AVG Recall | AVG F1 Score |
 |---------------|--------------|---------------|------------|--------------|
 | Random Forest | 66.04%       | 71.81%        | 66.04%     | 64.07%       |
-| LSTM          | X.XX%        | X.XX%         | X.XX%      | X.XX%        |
-| Transformer   | 26.29%       | 35.61%        | 26.29%     | 28.74%       |
+| LSTM          | 1.92%        | 0.63%         | 1.92%      | 0.43%        |
+| Transformer   | 17.39%       | 35.82%        | 17.39%     | 19.39%       |
 
 
 ## 🚀 Running the Project
