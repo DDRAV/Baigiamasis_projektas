@@ -80,6 +80,12 @@ def predict_chords(user_embedding, model_list, model_type):
 
             print(
                 f"🔍 Debug: RF Model {i + 1} expects {expected_features} features, got {actual_features}.")  # Debug print
+            print(f"Training Features Expected by Model: {model.n_features_in_}")
+
+            print(f"Type of actual_features: {type(actual_features)}")
+            
+            X_user_seq = X_user_seq[:, :303]  # Trim excess feature
+
 
             assert actual_features == expected_features, (
                 f"❌ RF Model {i + 1} expects {expected_features} features, but got {actual_features}."
